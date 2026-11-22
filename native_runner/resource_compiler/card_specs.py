@@ -386,7 +386,36 @@ def _load_definition_fragments(
             plain = _asset_bytes(path)
             if plain is None:
                 continue
-            document = tomllib.loads(plain.decode("utf-8-sig").rstrip("\x00\r\n\t "))
+            decoded = plain.decode("utf-8-sig")
+            if path.name.casefold() == "character_buffs.toml":
+                lines = decoded.splitlines()
+                header = "[ImmuneToWeakPushback]"
+                positions = [i for i, line in enumerate(lines) if line.strip() == header]
+
+                if len(positions) == 2:
+                    second = positions[1]
+                    end = next(
+                        (i for i in range(second + 1, len(lines))
+                         if re.match(r"^\s*\[{1,2}.+?\]{1,2}\s*$", lines[i])),
+                        len(lines),
+                    )
+                    extra = lines[second + 1:end]
+                    del lines[second:end]
+
+                    first = next(i for i, line in enumerate(lines) if line.strip() == header)
+                    first_end = next(
+                        (i for i in range(first + 1, len(lines))
+                         if re.match(r"^\s*\[{1,2}.+?\]{1,2}\s*$", lines[i])),
+                        len(lines),
+                    )
+                    lines[first_end:first_end] = extra
+                    decoded = "\n".join(lines) + "\n"
+                elif len(positions) != 1:
+                    raise ValueError(
+                        f"Unexpected ImmuneToWeakPushback table count: {len(positions)}"
+                    )
+
+            document = tomllib.loads(decoded.rstrip("\x00\r\n\t "))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             raise ContractError(f"invalid decompressed definition TOML {path}: {error}") from error
         for group in definitions:

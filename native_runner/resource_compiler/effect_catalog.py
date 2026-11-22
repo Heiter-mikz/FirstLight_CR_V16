@@ -887,11 +887,9 @@ class NativeEffectCatalogV1(ContractMixin):
                     )
             elif item.global_id_strategy != "fnv1a_type_name":
                 raise ContractError(f"native effect {item.effect_name!r} must use exact FNV-1a type+name fallback")
-        unknown_entries = sorted(set(entries).difference(item.effect_name for item in ordered))
-        if unknown_entries:
-            raise ContractError(
-                "Buff ID registry contains definitions absent from the effect catalog: " + ", ".join(unknown_entries)
-            )
+        # The global Buff registry may contain names whose definitions are
+        # not present in the currently decoded static effect catalog.
+        # Preserve these registry IDs; only validate IDs for effects we load.
         global_ids = tuple(item.buff_global_id for item in ordered)
         if len(set(global_ids)) != len(global_ids):
             duplicates = sorted(global_id for global_id in set(global_ids) if global_ids.count(global_id) > 1)

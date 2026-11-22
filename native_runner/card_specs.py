@@ -146,6 +146,12 @@ def discover_card_source(workspace_root: str | Path, source_roots: Iterable[str 
 def build_card_catalog(
     workspace_root: str | Path | None = None, *, source_roots: Iterable[str | Path] = ()
 ) -> CardSpecCatalog:
+    # V16_COMPILED_CARD_CATALOG_LOADER: V16 uses the compiled CardSpec dataset, not legacy source discovery.
+    from .competitive_data import DATA_VERSION, competitive_data_initialization, load_competitive_data
+    if DATA_VERSION == "16":
+        with competitive_data_initialization():
+            return CardSpecCatalog.from_mapping(load_competitive_data("card_specs"))
+
     workspace = Path(workspace_root or WORKSPACE_ROOT).resolve()
     discover_card_source(workspace, source_roots)
     return CardSpecCatalog.from_mapping(load_competitive_data("card_specs", workspace))

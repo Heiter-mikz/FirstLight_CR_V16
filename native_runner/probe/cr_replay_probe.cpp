@@ -1,3 +1,4 @@
+#include <array>
 #define _GNU_SOURCE 1
 
 #include <android/log.h>

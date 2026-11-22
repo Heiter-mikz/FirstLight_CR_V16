@@ -23,7 +23,7 @@ from types import MappingProxyType
 from typing import Any, ClassVar
 
 from .card_specs import CATALOG_VERSION, CardSpecCatalog
-from .competitive_data import competitive_data_initialization, load_competitive_data
+from .competitive_data import DATA_VERSION, competitive_data_initialization, load_competitive_data
 from .runtime_scope import NORMAL_MODE_CASE_SCOPE_SHA256
 from .contracts import CardKind, CardSpecV1, ContractError, ContractMixin, content_hash
 
@@ -254,10 +254,27 @@ REASON_MISSING_MECHANICS_READINESS = "missing_definition_exact_mechanics_readine
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 NORMAL_MODE_POLICY_FORM_EVIDENCE_VERSION = "normal-mode-policy-form-evidence.2026-08-12.2"
 NORMAL_MODE_POLICY_FORM_CONTRACT_VERSION = "normal-mode-policy-form-evidence.v1"
+V16_BASE_ONLY_FORM_EVIDENCE_VERSION = "normal-mode-policy-form-evidence.v16-base-only"
+V16_BASE_ONLY_FORM_EVIDENCE_SHA256 = content_hash(
+    {
+        "version": V16_BASE_ONLY_FORM_EVIDENCE_VERSION,
+        "source": "competitive_v16",
+        "policy": "all-evolution-and-hero-form-bits-disabled",
+    }
+)
 
 
 class SemanticSubsetError(ContractError):
     """Raised when a catalog or deck crosses the supported-subset boundary."""
+
+
+class _V16BaseOnlyFormEvidence:
+    """Explicit V16 bring-up policy: no evolution or Hero forms are admitted."""
+
+    criteria_version = V16_BASE_ONLY_FORM_EVIDENCE_VERSION
+    evidence_id = V16_BASE_ONLY_FORM_EVIDENCE_SHA256
+    cards: tuple[()] = ()
+    form_masks: Mapping[int, int] = MappingProxyType({})
 
 
 def _require_sha256(value: str, label: str) -> None:
@@ -394,6 +411,78 @@ class NormalModePolicyReadinessV1:
     case_scope_id: str
 
 
+def _v16_policy_readiness_for_catalog(catalog: CardSpecCatalog) -> NormalModePolicyReadinessV1:
+    """Build a provisional V16 base-card admission set bound to V16 source data.
+
+    This is a compatibility/bring-up policy, not a reviewed mechanics ledger.
+    It admits catalog entries that are visible and in use, while all non-base
+    forms remain disabled. The identity is bound to the compiled V16 card
+    logic and the exact V16 CardSpec catalog.
+    """
+    with competitive_data_initialization():
+        static_logic = load_competitive_data("card_logic")
+
+    logic_sha256 = content_hash(static_logic)
+    identity = {
+        "policy": "v16-visible-in-use-base-only-provisional.v1",
+        "source_release": catalog.source_release,
+        "catalog_version": catalog.version,
+        "card_specs_hash": catalog.specs_hash,
+        "ability_specs_hash": catalog.ability_specs_hash,
+        "static_card_logic_sha256": logic_sha256,
+    }
+    report_id = content_hash(identity)
+    static_catalog_id = content_hash(
+        {
+            "source_release": catalog.source_release,
+            "catalog_version": catalog.version,
+            "card_specs_hash": catalog.specs_hash,
+            "ability_specs_hash": catalog.ability_specs_hash,
+        }
+    )
+    case_scope_id = content_hash(
+        {
+            "scope": "normal-mode-v16-base-only-provisional.v1",
+            "source_release": catalog.source_release,
+            "static_card_logic_sha256": logic_sha256,
+        }
+    )
+
+    ready_names: dict[int, str] = {}
+    excluded_names: dict[int, str] = {}
+    evidence_by_id: dict[int, str] = {}
+    for spec in catalog.specs:
+        unavailable = bool(spec.attributes.get("NotVisible") or spec.attributes.get("NotInUse"))
+        if unavailable:
+            excluded_names[spec.card_id] = spec.name
+        else:
+            ready_names[spec.card_id] = spec.name
+            evidence_by_id[spec.card_id] = content_hash(
+                {
+                    "policy_identity": identity,
+                    "card_id": spec.card_id,
+                    "card_spec_sha256": content_hash(spec.to_dict()),
+                    "admission": "visible-in-use-base-only-provisional",
+                }
+            )
+
+    if len(ready_names) < MINIMUM_BATTLE_CARDS:
+        raise SemanticSubsetError(
+            f"V16 provisional base-only policy found only {len(ready_names)} eligible cards"
+        )
+
+    return NormalModePolicyReadinessV1(
+        report_id=report_id,
+        static_catalog_id=static_catalog_id,
+        ready_card_ids=frozenset(ready_names),
+        excluded_card_ids=frozenset(excluded_names),
+        card_names_by_id=MappingProxyType(ready_names),
+        excluded_card_names_by_id=MappingProxyType(excluded_names),
+        card_evidence_sha256_by_id=MappingProxyType(evidence_by_id),
+        case_scope_id=case_scope_id,
+    )
+
+
 def _require_mapping(value: Any, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise SemanticSubsetError(f"{label} must be an object")
@@ -402,7 +491,17 @@ def _require_mapping(value: Any, label: str) -> Mapping[str, Any]:
 
 @lru_cache(maxsize=1)
 def load_normal_mode_policy_readiness() -> NormalModePolicyReadinessV1:
-    """Load the compact supported-card manifest, verified by competitive_data."""
+    """Load the version-specific normal-mode base-card admission policy."""
+    if DATA_VERSION == "16":
+        # The V16 competitive manifest describes compiled datasets and does not
+        # contain the legacy resource "source_root" field. Load the already
+        # compiled CardSpec catalog directly instead of running source discovery.
+        from .card_specs import CardSpecCatalog
+
+        with competitive_data_initialization():
+            catalog = CardSpecCatalog.from_mapping(load_competitive_data("card_specs"))
+        return _v16_policy_readiness_for_catalog(catalog)
+
     manifest = load_competitive_data("card_support")
     compatibility = manifest["compatibility"]
     names = {row["card_id"]: row["name"] for row in manifest["supported_cards"]}
@@ -431,8 +530,10 @@ def load_normal_mode_policy_readiness() -> NormalModePolicyReadinessV1:
 
 
 def policy_ready_form_mask(card_id: int, *, form_evidence: NormalModePolicyFormEvidenceV1 | None = None) -> int:
-    """Return only the form bits backed by the versioned form evidence."""
+    """Return only the form bits backed by the active versioned evidence."""
 
+    if DATA_VERSION == "16":
+        return 0
     evidence = form_evidence or DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE
     return evidence.form_masks.get(int(card_id), 0)
 
@@ -542,7 +643,12 @@ class SemanticSupportedSubsetV1(ContractMixin):
             raise SemanticSubsetError(f"unsupported semantic subset criteria: {self.criteria_version}")
         if self.native_capability_profile != NATIVE_SEMANTIC_CAPABILITY_PROFILE:
             raise SemanticSubsetError(f"unsupported native semantic profile: {self.native_capability_profile}")
-        if self.mechanics_readiness_report_id != NORMAL_MODE_POLICY_MECHANICS_READINESS_REPORT_ID:
+        expected_readiness_report_id = (
+            load_normal_mode_policy_readiness().report_id
+            if DATA_VERSION == "16"
+            else NORMAL_MODE_POLICY_MECHANICS_READINESS_REPORT_ID
+        )
+        if self.mechanics_readiness_report_id != expected_readiness_report_id:
             raise SemanticSubsetError("unsupported normal-mode mechanics readiness report")
         if self.normal_mode_scope_version != NORMAL_MODE_POLICY_SCOPE_VERSION:
             raise SemanticSubsetError("unsupported normal-mode policy scope")
@@ -592,10 +698,16 @@ class SemanticSupportedSubsetV1(ContractMixin):
             raise SemanticSubsetError("semantic baseline deck contains excluded cards")
         speed_xbow = tuple(int(card_id) for card_id in self.speed_xbow_deck)
         speed_forms = tuple(int(mask) for mask in self.speed_xbow_form_availability)
-        if speed_xbow != SEMANTIC_SPEED_XBOW_DECK:
-            raise SemanticSubsetError("semantic subset must bind the exact speed-X-Bow deck order")
-        if speed_forms != SEMANTIC_SPEED_XBOW_FORM_AVAILABILITY:
-            raise SemanticSubsetError("semantic subset must bind the exact speed-X-Bow form masks")
+        if DATA_VERSION == "16":
+            if len(speed_xbow) != 8 or len(set(speed_xbow)) != 8:
+                raise SemanticSubsetError("V16 speed-X-Bow reference deck must contain eight distinct cards")
+            if len(speed_forms) != 8 or any(mask != 0 for mask in speed_forms):
+                raise SemanticSubsetError("V16 speed-X-Bow reference deck must be base-form-only")
+        else:
+            if speed_xbow != SEMANTIC_SPEED_XBOW_DECK:
+                raise SemanticSubsetError("semantic subset must bind the exact speed-X-Bow deck order")
+            if speed_forms != SEMANTIC_SPEED_XBOW_FORM_AVAILABILITY:
+                raise SemanticSubsetError("semantic subset must bind the exact speed-X-Bow form masks")
         if not set(speed_xbow).issubset(allowed_ids):
             raise SemanticSubsetError("semantic speed-X-Bow deck contains excluded cards")
         allowed_by_id = {item.card_id: item for item in allowed}
@@ -607,10 +719,16 @@ class SemanticSupportedSubsetV1(ContractMixin):
                 )
         pekka_bridge_spam = tuple(int(card_id) for card_id in self.pekka_bridge_spam_deck)
         pekka_forms = tuple(int(mask) for mask in self.pekka_bridge_spam_form_availability)
-        if pekka_bridge_spam != SEMANTIC_PEKKA_BRIDGE_SPAM_DECK:
-            raise SemanticSubsetError("semantic subset must bind the exact P.E.K.K.A bridge-spam deck order")
-        if pekka_forms != SEMANTIC_PEKKA_BRIDGE_SPAM_FORM_AVAILABILITY:
-            raise SemanticSubsetError("semantic subset must bind the exact P.E.K.K.A bridge-spam form masks")
+        if DATA_VERSION == "16":
+            if len(pekka_bridge_spam) != 8 or len(set(pekka_bridge_spam)) != 8:
+                raise SemanticSubsetError("V16 P.E.K.K.A reference deck must contain eight distinct cards")
+            if len(pekka_forms) != 8 or any(mask != 0 for mask in pekka_forms):
+                raise SemanticSubsetError("V16 P.E.K.K.A reference deck must be base-form-only")
+        else:
+            if pekka_bridge_spam != SEMANTIC_PEKKA_BRIDGE_SPAM_DECK:
+                raise SemanticSubsetError("semantic subset must bind the exact P.E.K.K.A bridge-spam deck order")
+            if pekka_forms != SEMANTIC_PEKKA_BRIDGE_SPAM_FORM_AVAILABILITY:
+                raise SemanticSubsetError("semantic subset must bind the exact P.E.K.K.A bridge-spam form masks")
         if not set(pekka_bridge_spam).issubset(allowed_ids):
             raise SemanticSubsetError("semantic P.E.K.K.A bridge-spam deck contains excluded cards")
         for card_id, form_mask in zip(pekka_bridge_spam, pekka_forms, strict=True):
@@ -798,6 +916,26 @@ class SemanticSupportedSubsetV1(ContractMixin):
 
 
 def _validate_policy_catalog(catalog: CardSpecCatalog, readiness: NormalModePolicyReadinessV1) -> None:
+    if DATA_VERSION == "16":
+        expected = _v16_policy_readiness_for_catalog(catalog)
+        if readiness != expected:
+            raise SemanticSubsetError("V16 base-only readiness is not bound to this exact catalog and logic dataset")
+        catalog_ids = frozenset(spec.card_id for spec in catalog.specs)
+        if catalog_ids != (readiness.ready_card_ids | readiness.excluded_card_ids):
+            raise SemanticSubsetError("V16 policy readiness catalog partition drifted")
+        for spec in catalog.specs:
+            unavailable = bool(spec.attributes.get("NotVisible") or spec.attributes.get("NotInUse"))
+            if spec.card_id in readiness.ready_card_ids:
+                if unavailable or readiness.card_names_by_id[spec.card_id] != spec.name:
+                    raise SemanticSubsetError(f"V16 ready card {spec.card_id} identity or availability drifted")
+            elif (
+                spec.card_id not in readiness.excluded_card_ids
+                or not unavailable
+                or readiness.excluded_card_names_by_id[spec.card_id] != spec.name
+            ):
+                raise SemanticSubsetError(f"V16 excluded card {spec.card_id} identity or availability drifted")
+        return
+
     if (
         catalog.version != CATALOG_VERSION
         or catalog.specs_hash != NORMAL_MODE_POLICY_CARD_SPECS_HASH
@@ -828,6 +966,15 @@ def validate_normal_mode_policy_form_evidence(
     readiness: NormalModePolicyReadinessV1 | None = None,
 ) -> None:
     """Validate injected form evidence against catalog and base readiness."""
+
+    if DATA_VERSION == "16":
+        if (
+            form_evidence is not DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE
+            or form_evidence.evidence_id != V16_BASE_ONLY_FORM_EVIDENCE_SHA256
+            or bool(form_evidence.form_masks)
+        ):
+            raise SemanticSubsetError("V16 permits only the canonical base-only form policy")
+        return
 
     if not isinstance(form_evidence, NormalModePolicyFormEvidenceV1):
         raise SemanticSubsetError("form_evidence must be NormalModePolicyFormEvidenceV1")
@@ -886,6 +1033,29 @@ def build_semantic_supported_subset(
         (excluded if reasons else allowed).append(
             _decision(spec, reasons, mechanics_readiness_sha256=evidence_sha256, form_evidence=forms)
         )
+    if DATA_VERSION == "16":
+        allowed_ids = frozenset(item.card_id for item in allowed)
+
+        def select_v16_reference_deck(preferred: tuple[int, ...]) -> tuple[int, ...]:
+            if len(preferred) == 8 and len(set(preferred)) == 8 and set(preferred).issubset(allowed_ids):
+                return tuple(preferred)
+            fallback = tuple(sorted(allowed_ids)[:8])
+            if len(fallback) != 8:
+                raise SemanticSubsetError("V16 cannot form an eight-card reference deck")
+            return fallback
+
+        baseline_deck = select_v16_reference_deck(SEMANTIC_BASELINE_DECK)
+        speed_xbow_deck = select_v16_reference_deck(SEMANTIC_SPEED_XBOW_DECK)
+        speed_xbow_forms = (0,) * 8
+        pekka_bridge_spam_deck = select_v16_reference_deck(SEMANTIC_PEKKA_BRIDGE_SPAM_DECK)
+        pekka_bridge_spam_forms = (0,) * 8
+    else:
+        baseline_deck = SEMANTIC_BASELINE_DECK
+        speed_xbow_deck = SEMANTIC_SPEED_XBOW_DECK
+        speed_xbow_forms = SEMANTIC_SPEED_XBOW_FORM_AVAILABILITY
+        pekka_bridge_spam_deck = SEMANTIC_PEKKA_BRIDGE_SPAM_DECK
+        pekka_bridge_spam_forms = SEMANTIC_PEKKA_BRIDGE_SPAM_FORM_AVAILABILITY
+
     return SemanticSupportedSubsetV1(
         catalog_version=catalog.version,
         card_specs_hash=catalog.specs_hash,
@@ -899,11 +1069,11 @@ def build_semantic_supported_subset(
         form_evidence_sha256=forms.evidence_id,
         allowed_cards=tuple(allowed),
         excluded_cards=tuple(excluded),
-        baseline_deck=SEMANTIC_BASELINE_DECK,
-        speed_xbow_deck=SEMANTIC_SPEED_XBOW_DECK,
-        speed_xbow_form_availability=(SEMANTIC_SPEED_XBOW_FORM_AVAILABILITY),
-        pekka_bridge_spam_deck=SEMANTIC_PEKKA_BRIDGE_SPAM_DECK,
-        pekka_bridge_spam_form_availability=(SEMANTIC_PEKKA_BRIDGE_SPAM_FORM_AVAILABILITY),
+        baseline_deck=baseline_deck,
+        speed_xbow_deck=speed_xbow_deck,
+        speed_xbow_form_availability=speed_xbow_forms,
+        pekka_bridge_spam_deck=pekka_bridge_spam_deck,
+        pekka_bridge_spam_form_availability=pekka_bridge_spam_forms,
     )
 
 
@@ -911,14 +1081,18 @@ from .card_specs import build_card_catalog
 from .normal_form_evidence import build_normal_mode_policy_form_evidence, NORMAL_MODE_POLICY_FORM_EVIDENCE_SHA256
 
 
-# Build the canonical 62-card form contract only after all semantic contract
-# types and readiness validators exist, then pin the resulting content hash.
-with competitive_data_initialization():
-    DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE = build_normal_mode_policy_form_evidence(build_card_catalog())
-if DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE.evidence_id != NORMAL_MODE_POLICY_FORM_EVIDENCE_SHA256:
-    raise SemanticSubsetError(
-        f"canonical normal-mode form evidence identity drifted: {DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE.evidence_id}"
-    )
+# V15 retains the reviewed 62-card form contract. V16 starts with a separate,
+# explicit base-only policy and does not import V15 form admission evidence.
+if DATA_VERSION == "16":
+    DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE = _V16BaseOnlyFormEvidence()
+else:
+    with competitive_data_initialization():
+        DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE = build_normal_mode_policy_form_evidence(build_card_catalog())
+    if DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE.evidence_id != NORMAL_MODE_POLICY_FORM_EVIDENCE_SHA256:
+        raise SemanticSubsetError(
+            f"canonical normal-mode form evidence identity drifted: {DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE.evidence_id}"
+        )
+
 NORMAL_MODE_POLICY_FORM_MASKS: Mapping[int, int] = MappingProxyType(
     dict(DEFAULT_NORMAL_MODE_POLICY_FORM_EVIDENCE.form_masks)
 )

@@ -21,15 +21,66 @@ from .paths import PACKAGE_ROOT, WORKSPACE_ROOT
 from .local_config import setting
 
 DATA_ROOT = PACKAGE_ROOT / "data" / "competitive"
-GENERATED_DATA_ROOT = Path(setting("CR_COMPETITIVE_DATA_ROOT", str(DATA_ROOT)))
-MANIFEST_SHA256 = "699c0c77cc5d2ec9a475ec0d10875f9e38710af9fc5472cc3431276384c89b78"
-_verified_files: ContextVar[set[tuple[Path, str]] | None] = ContextVar("competitive_verified_files", default=None)
+V16_DATA_ROOT = PACKAGE_ROOT / "data" / "competitive_v16"
+
+# V15 remains the default. Select V16 explicitly with
+# CR_COMPETITIVE_DATA_VERSION=16.
+DATA_VERSION = str(setting("CR_COMPETITIVE_DATA_VERSION", "15")).strip()
+if DATA_VERSION not in {"15", "16"}:
+    raise ContractError(f"unsupported competitive data version: {DATA_VERSION}")
+
+ACTIVE_DATA_ROOT = V16_DATA_ROOT if DATA_VERSION == "16" else DATA_ROOT
+GENERATED_DATA_ROOT = Path(
+    setting(
+        "CR_COMPETITIVE_DATA_ROOT",
+        str(ACTIVE_DATA_ROOT),
+    )
+)
+
+V15_MANIFEST_SHA256 = "699c0c77cc5d2ec9a475ec0d10875f9e38710af9fc5472cc3431276384c89b78"
+V16_MANIFEST_SHA256 = "c8b871857e23cd3f344c69e7871d6846a58cf66d647402cfe032c4758ca34816"
+
+MANIFEST_SHA256 = (
+    V16_MANIFEST_SHA256 if DATA_VERSION == "16" else V15_MANIFEST_SHA256
+)
+
+_verified_files: ContextVar[set[tuple[Path, str]] | None] = ContextVar(
+    "competitive_verified_files", default=None
+)
 
 
 def _data_path(name: str) -> Path:
-    root = DATA_ROOT if name in {"card_support", "form_evidence", "runtime"} else GENERATED_DATA_ROOT
-    path = root / f"{name}.json"
-    return path if path.is_file() else path.with_suffix(".json.gz")
+    # These datasets are not yet generated for V16. Never silently borrow
+    # V15 evidence for a V16 release.
+    if DATA_VERSION == "16" and name in {"card_support", "form_evidence"}:
+        raise ContractError(
+            f"V16 competitive dataset is not available yet: {name}"
+        )
+
+    path = GENERATED_DATA_ROOT / f"{name}.json"
+    if path.is_file():
+        return path
+
+    compressed = path.with_suffix(".json.gz")
+    if compressed.is_file():
+        return compressed
+
+    raise ContractError(f"competitive dataset file not found: {path}")
+
+
+@lru_cache(maxsize=1)
+def _manifest() -> Mapping[str, Any]:
+    path = ACTIVE_DATA_ROOT / "manifest.json"
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise ContractError(f"competitive manifest unavailable: {path}") from error
+
+    if hashlib.sha256(raw).hexdigest() != MANIFEST_SHA256:
+        raise ContractError(
+            f"competitive data manifest SHA-256 mismatch: {path}"
+        )
+    return frozen_mapping(json.loads(raw))
 
 
 @contextmanager
@@ -60,17 +111,11 @@ def _verify_file(path: Path, expected: str) -> None:
         verified.add(key)
 
 
-@lru_cache(maxsize=1)
-def _manifest() -> Mapping[str, Any]:
-    raw = (DATA_ROOT / "manifest.json").read_bytes()
-    if hashlib.sha256(raw).hexdigest() != MANIFEST_SHA256:
-        raise ContractError("competitive data manifest SHA-256 mismatch")
-    return frozen_mapping(json.loads(raw))
 
 
 def validate_competitive_sources(workspace_root: str | Path | None = None) -> Mapping[str, Any]:
     """Compiler-only audit of original inputs; runtime uses verified compiled facts."""
-    _verify_file(DATA_ROOT / "manifest.json", MANIFEST_SHA256)
+    _verify_file(ACTIVE_DATA_ROOT / "manifest.json", MANIFEST_SHA256)
     manifest = _manifest()
     workspace = Path(workspace_root or WORKSPACE_ROOT).resolve()
     for relative, expected in manifest["source_files"].items():
