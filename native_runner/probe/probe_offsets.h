@@ -109,7 +109,16 @@ struct ProbeProfile {
   std::uint32_t apk_version_code;
   const char *libg_sha256;
   const char *libg_build_id;
-  bool runtime_offsets_ready;
+  bool runner_hooks_ready;
+  bool native_touch_hooks_ready;
+  bool combat_event_hooks_ready;
+  bool phase_runtime_hooks_ready;
+  bool special_movement_hooks_ready;
+  bool action_movement_hooks_ready;
+  bool character_state_hooks_ready;
+  bool visibility_hooks_ready;
+  bool remaining_runtime_hooks_ready;
+  bool tower_troop_hooks_ready;
   OffsetTable offsets;
   SignatureTable signatures;
 };
@@ -120,7 +129,7 @@ inline constexpr ProbeProfile kV15Profile{
     150535013u,
     "110aa2b5cac391c498645e072b0d88729428c2c2845e7e2737ca8ee979059783",
     "90e6f351f0dec4a28b494c3812d2629fd45d5a83",
-    true,
+    true, true, true, true, true, true, true, true, true, true,
   {
     0x00c8de8c,
     0x00c8c5b8,
@@ -213,7 +222,7 @@ inline constexpr ProbeProfile kV16Profile{
     160635001u,
     "0b580222e5a3502cf153bb5e6297ec32d2b154b605b777c74873dd75722e4eaa",
     "179ac4bd38c205bc5041d372a79f1c2f929b1c30",
-    false,
+    false, false, false, false, false, false, false, false, false, false,
     {},
     {}
 };
@@ -230,6 +239,6 @@ static_assert(kV15Profile.offsets.kGameStateContextRootSlotOffset == 0x019ad878)
 static_assert(kV15Profile.offsets.kContentPostProcessReadyOffset == 0x6e8);
 static_assert(kV16Profile.offsets.kGameStateContextRootSlotOffset == 0);
 static_assert(kV16Profile.offsets.kContentPostProcessReadyOffset == 0);
-static_assert(!kV16Profile.runtime_offsets_ready);
+static_assert(!kV16Profile.runner_hooks_ready);
 
 } // namespace cr_probe_offsets
