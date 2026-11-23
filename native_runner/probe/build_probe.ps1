@@ -20,10 +20,14 @@ if ($TargetVersion -notin @("15", "16")) {
 }
 
 if (-not $PSBoundParameters.ContainsKey("Output")) {
-    if ($env:CR_PROBE) {
+    if ($TargetVersion -eq "16") {
+        if ($env:CR_PROBE_V16) {
+            $Output = $env:CR_PROBE_V16
+        } else {
+            $Output = Join-Path $PSScriptRoot "out\libcrprobe_v16.so"
+        }
+    } elseif ($env:CR_PROBE) {
         $Output = $env:CR_PROBE
-    } elseif ($TargetVersion -eq "16") {
-        $Output = Join-Path $PSScriptRoot "out\libcrprobe_v16.so"
     } else {
         $Output = Join-Path $PSScriptRoot "out\libcrprobe.so"
     }
