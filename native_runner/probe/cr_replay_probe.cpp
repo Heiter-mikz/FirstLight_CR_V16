@@ -8447,9 +8447,9 @@ bool install_inline_hook(std::uintptr_t libg_base, std::uintptr_t offset, const 
 }
 
 bool install_hooks(std::uintptr_t libg_base) {
-  if (!cr_probe_offsets::kSelectedProfile.runtime_offsets_ready) {
-    LOGE("probe profile %s has no registered runtime offsets; refusing all hooks",
-         cr_probe_offsets::kSelectedProfile.label);
+  const auto &profile = cr_probe_offsets::kSelectedProfile;
+  if (!profile.runner_hooks_ready) {
+    LOGE("probe profile %s has no runner hook offsets; refusing runner hooks", profile.label);
     return false;
   }
   g_libg_base = libg_base;
@@ -8522,39 +8522,76 @@ bool install_hooks(std::uintptr_t libg_base) {
                   "GameStateManager::step", &g_hook_game_state_step),
   };
   success &= install_native_hook_table(libg_base, runner_hooks, sizeof(runner_hooks) / sizeof(runner_hooks[0]));
-  const bool touch_installed = install_probe_native_touch(libg_base);
-  success &= touch_installed;
+  if (profile.native_touch_hooks_ready) {
+    const bool touch_installed = install_probe_native_touch(libg_base);
+    success &= touch_installed;
+  } else {
+    LOGI("native touch hooks disabled by profile %s", profile.label);
+  }
   // Combat events are an independently attested, fail-closed capability.
   // A mismatch must not disable the already-established runner lifecycle;
   // the nested combat envelope reports unavailable and emits no records.
-  install_combat_event_hooks(libg_base);
+  if (profile.combat_event_hooks_ready) {
+    install_combat_event_hooks(libg_base);
+  } else {
+    LOGI("combat event hooks disabled by profile %s", profile.label);
+  }
   // Phase/timing hooks follow the same independent exact-build boundary.
   // Their envelope remains unavailable when attestation or any ABI hook
   // fails; runner lifecycle success is intentionally unaffected.
-  install_phase_runtime_hooks(libg_base);
+  if (profile.phase_runtime_hooks_ready) {
+    install_phase_runtime_hooks(libg_base);
+  } else {
+    LOGI("phase runtime hooks disabled by profile %s", profile.label);
+  }
   // Ordinary dash execution is a distinct native domain from active Buff
   // effects.  Its caller-filtered envelope remains independently
   // fail-closed and never synthesizes EffectState.stage.
-  install_special_movement_runtime_hook(libg_base);
+  if (profile.special_movement_hooks_ready) {
+    install_special_movement_runtime_hook(libg_base);
+  } else {
+    LOGI("special movement hooks disabled by profile %s", profile.label);
+  }
   // Action-owned chain hops and atomic warps have a separate, exact-build
   // allowlist.  This envelope reports native action stages only and never
   // synthesizes EffectState.stage.
-  install_action_movement_runtime_hooks(libg_base);
+  if (profile.action_movement_hooks_ready) {
+    install_action_movement_runtime_hooks(libg_base);
+  } else {
+    LOGI("action movement hooks disabled by profile %s", profile.label);
+  }
   // The shared LogicCharacter state setter is filtered to the exact
   // movement-card allowlist.  Raw state integers and callers remain a
   // separate evidentiary domain until named live goldens map them.
-  install_character_state_runtime_hook(libg_base);
+  if (profile.character_state_hooks_ready) {
+    install_character_state_runtime_hook(libg_base);
+  } else {
+    LOGI("character state hooks disabled by profile %s", profile.label);
+  }
   // Visibility reuses the phase-owned f5a2d4 hook and uniquely owns
   // f5a578.  Contextual acquisition gates remain unavailable until a
   // PC-relative-safe AArch64 bridge exists.
-  install_visibility_runtime_hooks(libg_base, g_phase_buff_added_hook_installed.load(std::memory_order_acquire));
+  if (profile.visibility_hooks_ready && profile.phase_runtime_hooks_ready) {
+    install_visibility_runtime_hooks(libg_base, g_phase_buff_added_hook_installed.load(std::memory_order_acquire));
+  } else {
+    LOGI("visibility hooks disabled by profile %s (phase dependency or profile gate)", profile.label);
+  }
   // Remaining non-snapshot mechanics join exact independent hooks to the
   // already-attested combat/phase lifecycle. A partial set stays
   // unavailable and records its rejected-count fail-closed.
-  install_remaining_runtime_hooks(libg_base);
+  if (profile.remaining_runtime_hooks_ready && profile.combat_event_hooks_ready &&
+      profile.phase_runtime_hooks_ready) {
+    install_remaining_runtime_hooks(libg_base);
+  } else {
+    LOGI("remaining runtime hooks disabled by profile %s (dependency or profile gate)", profile.label);
+  }
   // Dagger Duchess inventory and Royal Chef cooking live in their starting
   // Action runtimes, outside ordinary object/component snapshots.
-  install_tower_troop_runtime_hooks(libg_base);
+  if (profile.tower_troop_hooks_ready) {
+    install_tower_troop_runtime_hooks(libg_base);
+  } else {
+    LOGI("tower troop hooks disabled by profile %s", profile.label);
+  }
   g_hook_install_ok.store(success, std::memory_order_release);
   return success;
 }
@@ -8565,11 +8602,25 @@ void initialize_probe_runtime_once(std::uintptr_t libg_base) {
                                                        std::memory_order_acquire)) {
     return;
   }
-  if (!cr_probe_offsets::kSelectedProfile.runtime_offsets_ready) {
-    LOGE("probe profile %s (libg SHA256 %s, Build ID %s) is selected but has no attested offsets; "
-         "probe startup is fail-closed and the control server will not start",
-         cr_probe_offsets::kSelectedProfile.label, cr_probe_offsets::kSelectedProfile.libg_sha256,
-         cr_probe_offsets::kSelectedProfile.libg_build_id);
+  g_libg_base = libg_base;
+  const auto &profile = cr_probe_offsets::kSelectedProfile;
+  char actual_sha256[65] = {};
+  char actual_build_id[41] = {};
+  const bool sha256_available = sha256_file(g_libg_path, actual_sha256);
+  const bool build_id_available = libg_build_id(actual_build_id);
+  if (!sha256_available || !build_id_available ||
+      std::strcmp(actual_sha256, profile.libg_sha256) != 0 ||
+      std::strcmp(actual_build_id, profile.libg_build_id) != 0) {
+    LOGE("probe profile identity mismatch: profile=%s expected_sha256=%s actual_sha256=%s "
+         "expected_build_id=%s actual_build_id=%s; refusing all hooks",
+         profile.label, profile.libg_sha256, sha256_available ? actual_sha256 : "<unavailable>",
+         profile.libg_build_id, build_id_available ? actual_build_id : "<unavailable>");
+    return;
+  }
+  LOGI("probe profile identity matched: %s", profile.label);
+  if (!profile.runner_hooks_ready) {
+    LOGE("probe profile %s has no runner hook offsets; probe startup is fail-closed and the control server will not start",
+         profile.label);
     return;
   }
   const bool hooks_installed = install_hooks(libg_base);
