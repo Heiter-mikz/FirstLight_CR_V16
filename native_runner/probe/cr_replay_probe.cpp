@@ -33,6 +33,7 @@
 
 #include "native_touch_interceptor.h"
 #include "probe_json.h"
+#include "probe_offsets.h"
 
 namespace {
 
@@ -54,92 +55,92 @@ const char *g_assets_paths[] = {
     g_user_assets_path,
     "/data/data/nullsroyale.rel.free/update/assets.scdb",
 };
-constexpr std::uintptr_t kReplayJsonSetterOffset = 0x00c8de8c;
-constexpr std::uintptr_t kReplayManagerGetterOffset = 0x00c8c5b8;
-constexpr std::uintptr_t kLibgStringFromUtf8Offset = 0x0138a800;
-constexpr std::uintptr_t kNativeReplayRunnerOffset = 0x00c87ecc;
-constexpr std::uintptr_t kReplayBattleControllerLifecycleOffset = 0x00c87620;
-constexpr std::uintptr_t kReplayBattleControllerFullUpdateOffset = 0x00c88bbc;
-constexpr std::uintptr_t kReplayBattleControllerClockOffset = 0x00c890bc;
-constexpr std::uintptr_t kReplayBattleControllerAlternateUpdateOffset = 0x00c899e0;
-constexpr std::uintptr_t kReplayClockGlobalPauseGuardOffset = 0x00cb6694;
-constexpr std::uintptr_t kGameAppGetterOffset = 0x00755818;
-constexpr std::uintptr_t kGameAppPauseGuardOffset = 0x0075c628;
-constexpr std::uintptr_t kGameAppPendingEventSetterOffset = 0x0075a6dc;
-constexpr std::size_t kGameAppPendingEventFlagsOffset = 0x1b8;
-constexpr std::size_t kGameAppPendingEventOffset = 0x1bc;
-constexpr std::size_t kReplayBattleControllerStateOffset = 0x30;
-constexpr std::size_t kReplayBattleControllerAccumulatorOffset = 0x44;
-constexpr std::size_t kReplayBattleControllerSpeedOffset = 0x74;
-constexpr std::size_t kReplayBattleControllerSuspendedOffset = 0x18c;
-constexpr std::uintptr_t kGameStateLoadOffset = 0x01061b1c;
-constexpr std::uintptr_t kGameStateStepOffset = 0x010620a4;
-constexpr std::uintptr_t kGameStateTickOffset = 0x01062bc0;
-constexpr std::uintptr_t kGameStateContextAOffset = 0x0080031c;
-constexpr std::uintptr_t kGameStateContextBOffset = 0x00eaf1c8;
-constexpr std::uintptr_t kGameStateNewOffset = 0x017e4b20;
-constexpr std::uintptr_t kGameStateDeleteOffset = 0x017e4b50;
-constexpr std::uintptr_t kGameStateConstructorOffset = 0x01060ba8;
-constexpr std::uintptr_t kGameStateSetupOffset = 0x01060f84;
-constexpr std::uintptr_t kGameStateDestroyOffset = 0x010610b0;
-constexpr std::uintptr_t kGameStateBaseDestroyOffset = 0x00988844;
-constexpr std::uintptr_t kJsonParseOffset = 0x0121a648;
-constexpr std::uintptr_t kLogicCommandParseOffset = 0x00d2fe78;
-constexpr std::uintptr_t kLogicCommandAppendOffset = 0x00d2eef0;
-constexpr std::uintptr_t kLogicCommandQueueConstructorOffset = 0x00d2eddc;
-constexpr std::uintptr_t kLogicCommandQueueDestroyOffset = 0x00d2ee40;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // The stock UI resolves the active ReplayBattleController through c85c28 and
 // finishes every player command through c893d0.  That second function owns the
 // validation, command tick stamping and ClientInput network-message enqueue.
 // Calling it on the game thread preserves the stock outbound authority while
 // bypassing only GameApp::nOnTouchEvent and its multi-tick gesture state.
-constexpr std::uintptr_t kStateSnapshotOffset = 0x00ad9a50;
-constexpr std::uintptr_t kStateSnapshotDeleteOffset = 0x0105e8bc;
-constexpr std::uintptr_t kByteStreamResetReadOffset = 0x0121220c;
-constexpr std::uintptr_t kByteStreamFlipReadOffset = 0x0121221c;
-constexpr std::uintptr_t kByteStreamResetChecksumOffset = 0x012141bc;
-constexpr std::uintptr_t kGameStateDeserializeHeaderOffset = 0x010634c0;
-constexpr std::uintptr_t kGameStateDeserializeBodyOffset = 0x0106379c;
-constexpr std::uintptr_t kCardSelectionBuildOffset = 0x00e2d1bc;
-constexpr std::uintptr_t kJsonMemberFindOffset = 0x00d0e100;
-constexpr std::uintptr_t kLogicDataByGlobalIdOffset = 0x00dd1340;
-constexpr std::uintptr_t kLocationTileMapEnsureOffset = 0x00857608;
-constexpr std::uintptr_t kLocationTileMapLookupOffset = 0x00df8508;
-constexpr std::uintptr_t kEglSwapBuffersGotOffset = 0x018e9d88;
+
+
+
+
+
+
+
+
+
+
+
+
+
 // libg calls its AArch64 SHA256 self-integrity initializer exactly once from
 // this site. Google's x86_64 libndk_translation advertises the guest feature
 // but aborts on SHA256H/SHA256H2/SHA256SU instructions. On translated Android
 // only, skip that unused-result initializer so the stock battle engine can
 // finish booting. The call remains untouched on real AArch64 devices.
-constexpr std::uintptr_t kTranslatedSha256InitializerCallOffset = 0x00c8ece0;
-constexpr std::uint32_t kTranslatedSha256InitializerCall = 0x97eba894u;
+
+
 constexpr std::uint32_t kAarch64Nop = 0xd503201fu;
-constexpr std::uintptr_t kGameStateContextRootSlotOffset = 0x019ad878;
-constexpr std::uintptr_t kBuffAssetVtableOffset = 0x01882500;
-constexpr std::uintptr_t kBuffAssetClassNameGetterOffset = 0x00d961f4;
-constexpr std::uintptr_t kLogicDataTypeGetterOffset = 0x00dc2560;
-constexpr std::uintptr_t kProjectileVtableOffset = 0x0189cc28;
-constexpr std::uintptr_t kProjectileKindGetterOffset = 0x00f27a58;
-constexpr std::uintptr_t kCharacterVtableOffset = 0x0189c4e8;
-constexpr std::size_t kProjectileDragStageOffset = 0x189;
-constexpr std::size_t kProjectileDragBackSpeedOffset = 0x1b0;
-constexpr std::uintptr_t kChampionControllerVtableOffset = 0x0189e4e8;
-constexpr std::uintptr_t kChampionActionDataVtableOffset = 0x0188cb28;
-constexpr std::uintptr_t kCharacterAbilityDataVtableOffset = 0x018823f0;
-constexpr std::size_t kCharacterAbilityExtraSpawnBaseOffset = 0x104;
-constexpr std::size_t kCharacterAbilityExtraSpawnLimitOffset = 0x108;
-constexpr std::size_t kCharacterExtraSpawnAccumulatorOffset = 0x1f0;
-constexpr std::uintptr_t kCaptureCharacterActionDataVtableOffset = 0x0188c848;
-constexpr std::uintptr_t kCaptureCharacterRuntimeVtableOffset = 0x0189e2d8;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 constexpr std::size_t kCaptureRuntimeMaximumTargets = 160;
 constexpr std::int32_t kCaptureRuntimeMaximumVectorCapacity = 1024;
 constexpr std::int32_t kCaptureRuntimeMaximumConfiguredLimit = 1000;
-constexpr std::uintptr_t kThresholdRelocationActionDataVtableOffset = 0x0188ef18;
-constexpr std::uintptr_t kThresholdRelocationRuntimeVtableOffset = 0x0189f6f0;
+
+
 constexpr std::int32_t kThresholdRelocationMaximumThresholds = 16;
 constexpr std::int32_t kThresholdRelocationMaximumVectorCapacity = 64;
-constexpr std::uintptr_t kPeriodicAttackModifierActionDataVtableOffset = 0x0188eac8;
-constexpr std::uintptr_t kPeriodicAttackModifierRuntimeVtableOffset = 0x0189f3d8;
+
+
 constexpr const char *kRichTelemetrySchema = "native-rich-telemetry.v3";
 // Raw objectIndex/secondaryIndex remain authoritative engine fields, but they
 // are not a globally unique identity: projectiles can copy their source
@@ -148,34 +149,97 @@ constexpr const char *kRichTelemetrySchema = "native-rich-telemetry.v3";
 // ID instead of falling back to either raw tuple or the compacting vector slot.
 constexpr std::int32_t kNativeObjectIdEntityKeyTag = -2;
 constexpr std::int32_t kUniqueReadyAbilityEntityKeyTag = -3;
-constexpr std::size_t kContentPostProcessReadyOffset = 0x6e8;
-constexpr std::uint8_t kReplayJsonSetterPrologue[16] = {
-    0xfd, 0x7b, 0xbe, 0xa9, 0xf4, 0x4f, 0x01, 0xa9, 0xfd, 0x03, 0x00, 0x91, 0xf4, 0x03, 0x01, 0xaa,
-};
-constexpr std::uint8_t kNativeReplayRunnerPrologue[16] = {
-    0xff, 0x03, 0x02, 0xd1, 0xfd, 0x7b, 0x02, 0xa9, 0xfb, 0x1b, 0x00, 0xf9, 0xfa, 0x67, 0x04, 0xa9,
-};
-constexpr std::uint8_t kReplayBattleControllerLifecyclePrologue[16] = {
-    0xff, 0x83, 0x03, 0xd1, 0xfd, 0x7b, 0x0a, 0xa9, 0xf8, 0x5f, 0x0b, 0xa9, 0xf6, 0x57, 0x0c, 0xa9,
-};
-constexpr std::uint8_t kReplayBattleControllerFullUpdatePrologue[16] = {
-    0xff, 0x03, 0x02, 0xd1, 0xeb, 0x2b, 0x03, 0x6d, 0xe9, 0x23, 0x04, 0x6d, 0xfd, 0x7b, 0x05, 0xa9,
-};
-constexpr std::uint8_t kReplayBattleControllerClockPrologue[16] = {
-    0x08, 0x30, 0x46, 0x39, 0x48, 0x00, 0x00, 0x34, 0xc0, 0x03, 0x5f, 0xd6, 0xff, 0x83, 0x03, 0xd1,
-};
-constexpr std::uint8_t kReplayBattleControllerAlternateUpdatePrologue[16] = {
-    0xe8, 0x0f, 0x1e, 0xfc, 0xfd, 0xfb, 0x00, 0xa9, 0xf3, 0x0f, 0x00, 0xf9, 0xfd, 0x23, 0x00, 0x91,
-};
-constexpr std::uint8_t kGameAppPendingEventSetterPrologue[16] = {
-    0x08, 0xc0, 0x41, 0xb9, 0x09, 0xbc, 0x41, 0xb9, 0x1f, 0x01, 0x02, 0x6b, 0x08, 0xe0, 0x46, 0x39,
-};
-constexpr std::uint8_t kGameStateLoadPrologue[16] = {
-    0xff, 0x83, 0x01, 0xd1, 0xfd, 0x7b, 0x01, 0xa9, 0xf9, 0x13, 0x00, 0xf9, 0xf8, 0x5f, 0x03, 0xa9,
-};
-constexpr std::uint8_t kGameStateStepPrologue[16] = {
-    0xfd, 0x7b, 0xbc, 0xa9, 0xf8, 0x5f, 0x01, 0xa9, 0xf6, 0x57, 0x02, 0xa9, 0xf4, 0x4f, 0x03, 0xa9,
-};
+
+
+
+
+
+
+
+
+
+
+
+constexpr std::uintptr_t kReplayJsonSetterOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayJsonSetterOffset;
+constexpr std::uintptr_t kReplayManagerGetterOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayManagerGetterOffset;
+constexpr std::uintptr_t kLibgStringFromUtf8Offset = cr_probe_offsets::kSelectedProfile.offsets.kLibgStringFromUtf8Offset;
+constexpr std::uintptr_t kNativeReplayRunnerOffset = cr_probe_offsets::kSelectedProfile.offsets.kNativeReplayRunnerOffset;
+constexpr std::uintptr_t kReplayBattleControllerLifecycleOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayBattleControllerLifecycleOffset;
+constexpr std::uintptr_t kReplayBattleControllerFullUpdateOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayBattleControllerFullUpdateOffset;
+constexpr std::uintptr_t kReplayBattleControllerClockOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayBattleControllerClockOffset;
+constexpr std::uintptr_t kReplayBattleControllerAlternateUpdateOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayBattleControllerAlternateUpdateOffset;
+constexpr std::uintptr_t kReplayClockGlobalPauseGuardOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayClockGlobalPauseGuardOffset;
+constexpr std::uintptr_t kGameAppGetterOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameAppGetterOffset;
+constexpr std::uintptr_t kGameAppPauseGuardOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameAppPauseGuardOffset;
+constexpr std::uintptr_t kGameAppPendingEventSetterOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameAppPendingEventSetterOffset;
+constexpr std::size_t kGameAppPendingEventFlagsOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameAppPendingEventFlagsOffset;
+constexpr std::size_t kGameAppPendingEventOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameAppPendingEventOffset;
+constexpr std::size_t kReplayBattleControllerStateOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayBattleControllerStateOffset;
+constexpr std::size_t kReplayBattleControllerAccumulatorOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayBattleControllerAccumulatorOffset;
+constexpr std::size_t kReplayBattleControllerSpeedOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayBattleControllerSpeedOffset;
+constexpr std::size_t kReplayBattleControllerSuspendedOffset = cr_probe_offsets::kSelectedProfile.offsets.kReplayBattleControllerSuspendedOffset;
+constexpr std::uintptr_t kGameStateLoadOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateLoadOffset;
+constexpr std::uintptr_t kGameStateStepOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateStepOffset;
+constexpr std::uintptr_t kGameStateTickOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateTickOffset;
+constexpr std::uintptr_t kGameStateContextAOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateContextAOffset;
+constexpr std::uintptr_t kGameStateContextBOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateContextBOffset;
+constexpr std::uintptr_t kGameStateNewOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateNewOffset;
+constexpr std::uintptr_t kGameStateDeleteOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateDeleteOffset;
+constexpr std::uintptr_t kGameStateConstructorOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateConstructorOffset;
+constexpr std::uintptr_t kGameStateSetupOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateSetupOffset;
+constexpr std::uintptr_t kGameStateDestroyOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateDestroyOffset;
+constexpr std::uintptr_t kGameStateBaseDestroyOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateBaseDestroyOffset;
+constexpr std::uintptr_t kJsonParseOffset = cr_probe_offsets::kSelectedProfile.offsets.kJsonParseOffset;
+constexpr std::uintptr_t kLogicCommandParseOffset = cr_probe_offsets::kSelectedProfile.offsets.kLogicCommandParseOffset;
+constexpr std::uintptr_t kLogicCommandAppendOffset = cr_probe_offsets::kSelectedProfile.offsets.kLogicCommandAppendOffset;
+constexpr std::uintptr_t kLogicCommandQueueConstructorOffset = cr_probe_offsets::kSelectedProfile.offsets.kLogicCommandQueueConstructorOffset;
+constexpr std::uintptr_t kLogicCommandQueueDestroyOffset = cr_probe_offsets::kSelectedProfile.offsets.kLogicCommandQueueDestroyOffset;
+constexpr std::uintptr_t kStateSnapshotOffset = cr_probe_offsets::kSelectedProfile.offsets.kStateSnapshotOffset;
+constexpr std::uintptr_t kStateSnapshotDeleteOffset = cr_probe_offsets::kSelectedProfile.offsets.kStateSnapshotDeleteOffset;
+constexpr std::uintptr_t kByteStreamResetReadOffset = cr_probe_offsets::kSelectedProfile.offsets.kByteStreamResetReadOffset;
+constexpr std::uintptr_t kByteStreamFlipReadOffset = cr_probe_offsets::kSelectedProfile.offsets.kByteStreamFlipReadOffset;
+constexpr std::uintptr_t kByteStreamResetChecksumOffset = cr_probe_offsets::kSelectedProfile.offsets.kByteStreamResetChecksumOffset;
+constexpr std::uintptr_t kGameStateDeserializeHeaderOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateDeserializeHeaderOffset;
+constexpr std::uintptr_t kGameStateDeserializeBodyOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateDeserializeBodyOffset;
+constexpr std::uintptr_t kCardSelectionBuildOffset = cr_probe_offsets::kSelectedProfile.offsets.kCardSelectionBuildOffset;
+constexpr std::uintptr_t kJsonMemberFindOffset = cr_probe_offsets::kSelectedProfile.offsets.kJsonMemberFindOffset;
+constexpr std::uintptr_t kLogicDataByGlobalIdOffset = cr_probe_offsets::kSelectedProfile.offsets.kLogicDataByGlobalIdOffset;
+constexpr std::uintptr_t kLocationTileMapEnsureOffset = cr_probe_offsets::kSelectedProfile.offsets.kLocationTileMapEnsureOffset;
+constexpr std::uintptr_t kLocationTileMapLookupOffset = cr_probe_offsets::kSelectedProfile.offsets.kLocationTileMapLookupOffset;
+constexpr std::uintptr_t kEglSwapBuffersGotOffset = cr_probe_offsets::kSelectedProfile.offsets.kEglSwapBuffersGotOffset;
+constexpr std::uintptr_t kTranslatedSha256InitializerCallOffset = cr_probe_offsets::kSelectedProfile.offsets.kTranslatedSha256InitializerCallOffset;
+constexpr std::uint32_t kTranslatedSha256InitializerCall = cr_probe_offsets::kSelectedProfile.offsets.kTranslatedSha256InitializerCall;
+constexpr std::uintptr_t kGameStateContextRootSlotOffset = cr_probe_offsets::kSelectedProfile.offsets.kGameStateContextRootSlotOffset;
+constexpr std::uintptr_t kBuffAssetVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kBuffAssetVtableOffset;
+constexpr std::uintptr_t kBuffAssetClassNameGetterOffset = cr_probe_offsets::kSelectedProfile.offsets.kBuffAssetClassNameGetterOffset;
+constexpr std::uintptr_t kLogicDataTypeGetterOffset = cr_probe_offsets::kSelectedProfile.offsets.kLogicDataTypeGetterOffset;
+constexpr std::uintptr_t kProjectileVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kProjectileVtableOffset;
+constexpr std::uintptr_t kProjectileKindGetterOffset = cr_probe_offsets::kSelectedProfile.offsets.kProjectileKindGetterOffset;
+constexpr std::uintptr_t kCharacterVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kCharacterVtableOffset;
+constexpr std::size_t kProjectileDragStageOffset = cr_probe_offsets::kSelectedProfile.offsets.kProjectileDragStageOffset;
+constexpr std::size_t kProjectileDragBackSpeedOffset = cr_probe_offsets::kSelectedProfile.offsets.kProjectileDragBackSpeedOffset;
+constexpr std::uintptr_t kChampionControllerVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kChampionControllerVtableOffset;
+constexpr std::uintptr_t kChampionActionDataVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kChampionActionDataVtableOffset;
+constexpr std::uintptr_t kCharacterAbilityDataVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kCharacterAbilityDataVtableOffset;
+constexpr std::size_t kCharacterAbilityExtraSpawnBaseOffset = cr_probe_offsets::kSelectedProfile.offsets.kCharacterAbilityExtraSpawnBaseOffset;
+constexpr std::size_t kCharacterAbilityExtraSpawnLimitOffset = cr_probe_offsets::kSelectedProfile.offsets.kCharacterAbilityExtraSpawnLimitOffset;
+constexpr std::size_t kCharacterExtraSpawnAccumulatorOffset = cr_probe_offsets::kSelectedProfile.offsets.kCharacterExtraSpawnAccumulatorOffset;
+constexpr std::uintptr_t kCaptureCharacterActionDataVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kCaptureCharacterActionDataVtableOffset;
+constexpr std::uintptr_t kCaptureCharacterRuntimeVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kCaptureCharacterRuntimeVtableOffset;
+constexpr std::uintptr_t kThresholdRelocationActionDataVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kThresholdRelocationActionDataVtableOffset;
+constexpr std::uintptr_t kThresholdRelocationRuntimeVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kThresholdRelocationRuntimeVtableOffset;
+constexpr std::uintptr_t kPeriodicAttackModifierActionDataVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kPeriodicAttackModifierActionDataVtableOffset;
+constexpr std::uintptr_t kPeriodicAttackModifierRuntimeVtableOffset = cr_probe_offsets::kSelectedProfile.offsets.kPeriodicAttackModifierRuntimeVtableOffset;
+constexpr std::size_t kContentPostProcessReadyOffset = cr_probe_offsets::kSelectedProfile.offsets.kContentPostProcessReadyOffset;
+constexpr const std::uint8_t (&kReplayJsonSetterPrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kReplayJsonSetterPrologue;
+constexpr const std::uint8_t (&kNativeReplayRunnerPrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kNativeReplayRunnerPrologue;
+constexpr const std::uint8_t (&kReplayBattleControllerLifecyclePrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kReplayBattleControllerLifecyclePrologue;
+constexpr const std::uint8_t (&kReplayBattleControllerFullUpdatePrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kReplayBattleControllerFullUpdatePrologue;
+constexpr const std::uint8_t (&kReplayBattleControllerClockPrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kReplayBattleControllerClockPrologue;
+constexpr const std::uint8_t (&kReplayBattleControllerAlternateUpdatePrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kReplayBattleControllerAlternateUpdatePrologue;
+constexpr const std::uint8_t (&kGameAppPendingEventSetterPrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kGameAppPendingEventSetterPrologue;
+constexpr const std::uint8_t (&kGameStateLoadPrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kGameStateLoadPrologue;
+constexpr const std::uint8_t (&kGameStateStepPrologue)[16] = cr_probe_offsets::kSelectedProfile.signatures.kGameStateStepPrologue;
 
 using ReplayJsonSetter = void (*)(void *, void *);
 using ReplayManagerGetter = void *(*)();
@@ -8383,6 +8447,11 @@ bool install_inline_hook(std::uintptr_t libg_base, std::uintptr_t offset, const 
 }
 
 bool install_hooks(std::uintptr_t libg_base) {
+  if (!cr_probe_offsets::kSelectedProfile.runtime_offsets_ready) {
+    LOGE("probe profile %s has no registered runtime offsets; refusing all hooks",
+         cr_probe_offsets::kSelectedProfile.label);
+    return false;
+  }
   g_libg_base = libg_base;
   const bool translated_sha256_compatible = install_translated_sha256_compatibility_shim(libg_base);
   g_egl_swap_buffers_got = reinterpret_cast<void **>(libg_base + kEglSwapBuffersGotOffset);
@@ -8494,6 +8563,13 @@ void initialize_probe_runtime_once(std::uintptr_t libg_base) {
   bool expected = false;
   if (!g_probe_runtime_started.compare_exchange_strong(expected, true, std::memory_order_acq_rel,
                                                        std::memory_order_acquire)) {
+    return;
+  }
+  if (!cr_probe_offsets::kSelectedProfile.runtime_offsets_ready) {
+    LOGE("probe profile %s (libg SHA256 %s, Build ID %s) is selected but has no attested offsets; "
+         "probe startup is fail-closed and the control server will not start",
+         cr_probe_offsets::kSelectedProfile.label, cr_probe_offsets::kSelectedProfile.libg_sha256,
+         cr_probe_offsets::kSelectedProfile.libg_build_id);
     return;
   }
   const bool hooks_installed = install_hooks(libg_base);
