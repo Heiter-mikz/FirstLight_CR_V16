@@ -69,7 +69,7 @@ def main() -> None:
             parser.error("--probe is required in output mode")
         result = verify_output(args.apk, args.probe)
         args.apk.with_suffix(".v16-diagnostics.json").write_text(
-            json.dumps(result, indent=2) + "\\n", encoding="utf-8"
+            json.dumps(result, indent=2) + "\n", encoding="utf-8"
         )
     print(json.dumps(result, indent=2), flush=True)
 
