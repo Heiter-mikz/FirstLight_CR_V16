@@ -46,6 +46,21 @@ if (-not (Test-Path -LiteralPath $compiler)) {
 }
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 
+# Compile-time profile checks run for both versions on every probe build.
+# This catches missing/shifted profile fields even when building only one ABI.
+$profileTestSource = Join-Path $PSScriptRoot "test_probe_offsets.cpp"
+foreach ($profileVersion in @("15", "16")) {
+    & $compiler `
+        -std=c++17 `
+        -Wall `
+        "-DCR_PROBE_TARGET_VERSION=$profileVersion" `
+        -fsyntax-only `
+        $profileTestSource
+    if ($LASTEXITCODE -ne 0) {
+        throw "Probe offset profile V$profileVersion compile-time test failed"
+    }
+}
+
 & $compiler `
     -std=c++17 `
     -O2 `
