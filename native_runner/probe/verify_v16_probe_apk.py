@@ -18,8 +18,16 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def verify_input(apk: Path) -> dict:
-    apk_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
+    apk_hash = sha256_file(apk)
     if apk_hash != EXPECTED_APK_SHA256:
         raise ValueError(f"V16 input APK SHA-256 mismatch: {apk_hash}")
     with zipfile.ZipFile(apk) as archive:
@@ -41,7 +49,7 @@ def verify_output(apk: Path, probe: Path) -> dict:
         raise ValueError(f"Output APK probe differs from build output: {probe_hash}")
     return {
         "schema": "firstlight-v16-probe-diagnostics.v1",
-        "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+        "apk_sha256": sha256_file(apk),
         "libg_sha256": libg_hash,
         "probe_sha256": probe_hash,
         "mode": "diagnostics-only-no-hooks",
