@@ -1173,6 +1173,83 @@ bool process_maps_contains(const char *marker) {
 
 std::size_t align_note_size(std::size_t value) { return (value + 3u) & ~static_cast<std::size_t>(3u); }
 
+struct MainEntryDiagnosticAnchor {
+  const char *name;
+  const std::uint8_t *prologue;
+};
+
+void log_v16_main_entry_candidates(std::uintptr_t libg_base) {
+  if (libg_base == 0 || g_libg_phdr == nullptr || g_libg_phnum == 0) {
+    LOGE("V16 main-entry diagnostics unavailable: libg program headers are missing");
+    return;
+  }
+
+  // These are V15 entry fingerprints used only as discovery anchors.  They
+  // are never used as V16 call targets.  Repeated hits are expected and are
+  // reported as candidates for later semantic discrimination.
+  const MainEntryDiagnosticAnchor anchors[] = {
+      {"ReplayJsonSetter", cr_probe_offsets::kV15Profile.signatures.kReplayJsonSetterPrologue},
+      {"NativeReplayRunner", cr_probe_offsets::kV15Profile.signatures.kNativeReplayRunnerPrologue},
+      {"ReplayBattleControllerLifecycle",
+       cr_probe_offsets::kV15Profile.signatures.kReplayBattleControllerLifecyclePrologue},
+      {"ReplayBattleControllerFullUpdate",
+       cr_probe_offsets::kV15Profile.signatures.kReplayBattleControllerFullUpdatePrologue},
+      {"ReplayBattleControllerClock", cr_probe_offsets::kV15Profile.signatures.kReplayBattleControllerClockPrologue},
+      {"ReplayBattleControllerAlternateUpdate",
+       cr_probe_offsets::kV15Profile.signatures.kReplayBattleControllerAlternateUpdatePrologue},
+      {"GameAppPendingEventSetter",
+       cr_probe_offsets::kV15Profile.signatures.kGameAppPendingEventSetterPrologue},
+      {"GameStateLoad", cr_probe_offsets::kV15Profile.signatures.kGameStateLoadPrologue},
+      {"GameStateStep", cr_probe_offsets::kV15Profile.signatures.kGameStateStepPrologue},
+  };
+  constexpr std::size_t kMaximumLoggedCandidatesPerAnchor = 24;
+  constexpr std::size_t kPreviewBytes = 64;
+
+  LOGI("V16 main-entry diagnostics begin: base=%p build_id=%s anchors=%zu",
+       reinterpret_cast<void *>(libg_base), cr_probe_offsets::kV16Profile.libg_build_id,
+       sizeof(anchors) / sizeof(anchors[0]));
+
+  for (const auto &anchor : anchors) {
+    std::size_t match_count = 0;
+    std::size_t logged_count = 0;
+    for (ElfW(Half) index = 0; index < g_libg_phnum; ++index) {
+      const ElfW(Phdr) &segment = g_libg_phdr[index];
+      if (segment.p_type != PT_LOAD || (segment.p_flags & PF_X) == 0 || segment.p_filesz < 16) {
+        continue;
+      }
+
+      const auto *begin =
+          reinterpret_cast<const std::uint8_t *>(libg_base + static_cast<std::uintptr_t>(segment.p_vaddr));
+      const std::size_t segment_size = static_cast<std::size_t>(segment.p_filesz);
+      for (std::size_t offset = 0; offset + 16 <= segment_size; offset += 4) {
+        if (std::memcmp(begin + offset, anchor.prologue, 16) != 0) {
+          continue;
+        }
+        ++match_count;
+        if (logged_count >= kMaximumLoggedCandidatesPerAnchor) {
+          continue;
+        }
+
+        char preview[kPreviewBytes * 2 + 1] = {};
+        const std::size_t available = segment_size - offset;
+        const std::size_t preview_size = available < kPreviewBytes ? available : kPreviewBytes;
+        for (std::size_t byte = 0; byte < preview_size; ++byte) {
+          std::snprintf(preview + byte * 2, sizeof(preview) - byte * 2, "%02x",
+                        static_cast<unsigned int>(begin[offset + byte]));
+        }
+        const std::uintptr_t candidate_offset =
+            static_cast<std::uintptr_t>(segment.p_vaddr) + static_cast<std::uintptr_t>(offset);
+        LOGI("V16_MAIN_ENTRY_CANDIDATE name=%s offset=0x%zx preview64=%s",
+             anchor.name, static_cast<std::size_t>(candidate_offset), preview);
+        ++logged_count;
+      }
+    }
+    LOGI("V16_MAIN_ENTRY_SUMMARY name=%s matches=%zu logged=%zu truncated=%d",
+         anchor.name, match_count, logged_count, match_count > logged_count ? 1 : 0);
+  }
+  LOGI("V16 main-entry diagnostics end; no function address was selected or hooked");
+}
+
 bool libg_build_id(char output[41]) {
   if (output == nullptr || g_libg_base == 0 || g_libg_phdr == nullptr) {
     return false;
@@ -8619,7 +8696,10 @@ void initialize_probe_runtime_once(std::uintptr_t libg_base) {
   }
   LOGI("probe profile identity matched: %s", profile.label);
   if (!profile.runner_hooks_ready) {
-    LOGE("probe profile %s has no runner hook offsets; probe startup is fail-closed and the control server will not start",
+    if (profile.apk_version_code == 160635001u) {
+      log_v16_main_entry_candidates(libg_base);
+    }
+    LOGE("probe profile %s has no runner hook offsets; diagnostics only, no hooks installed and no control server started",
          profile.label);
     return;
   }
