@@ -10,7 +10,7 @@ static_assert(kSelectedProfile.offsets.kGameStateContextRootSlotOffset == 0x019a
 static_assert(kSelectedProfile.offsets.kContentPostProcessReadyOffset == 0x6e8);
 #elif CR_PROBE_TARGET_VERSION == 16
 static_assert(kSelectedProfile.apk_version_code == 160635001u);
-static_assert(!kSelectedProfile.runtime_offsets_ready);
+static_assert(!kSelectedProfile.runner_hooks_ready);
 static_assert(kSelectedProfile.offsets.kReplayJsonSetterOffset == 0);
 static_assert(kSelectedProfile.offsets.kGameStateContextRootSlotOffset == 0);
 static_assert(kSelectedProfile.offsets.kContentPostProcessReadyOffset == 0);
